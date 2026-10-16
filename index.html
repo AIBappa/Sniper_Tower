@@ -81,7 +81,7 @@
   #burger:hover { background: rgba(24,50,72,.9); color: #b7ecff; border-color: #3f7fa8; }
   #burger:active { transform: translateY(1px); }
 
-  /* ---------- settings modal (fixed = covers whole screen incl. panel) ---------- */
+  /* ---------- settings modal ---------- */
   #modal {
     position: fixed;
     inset: 0;
@@ -135,8 +135,8 @@
     line-height: 1.35;
     flex: 1;
   }
-  .row .ctl { display: flex; align-items: baseline; gap: 5px; }
-  .row input {
+  .row .ctl { display: flex; align-items: center; gap: 6px; }
+  .row input[type="number"] {
     width: 70px;
     padding: 8px 8px;
     background: #060c12;
@@ -144,12 +144,45 @@
     border: 1px solid #2a4557;
     border-radius: 5px;
     font-family: inherit;
-    font-size: 16px; /* keep >= 16 to prevent iOS zoom */
+    font-size: 16px;
     font-weight: bold;
     text-align: center;
     outline: none;
   }
-  .row input:focus { border-color: #57e08a; box-shadow: 0 0 10px rgba(87,224,138,.3); }
+  .row input[type="number"]:focus { border-color: #57e08a; box-shadow: 0 0 10px rgba(87,224,138,.3); }
+
+  /* iOS-style toggle */
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: #1e2c38;
+    border: 1px solid #2a4557;
+    border-radius: 26px;
+    transition: .18s;
+  }
+  .slider::before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    top: 3px;
+    background: #55707f;
+    border-radius: 50%;
+    transition: .18s;
+  }
+  .switch input:checked + .slider { background: #1c4430; border-color: #46a06f; }
+  .switch input:checked + .slider::before { transform: translateX(22px); background: #b8ffd6; }
+
   .row .unit { font-size: 10px; color: #4d6577; letter-spacing: .5px; white-space: nowrap; }
 
   .actions { display: flex; gap: 8px; margin-top: 16px; }
@@ -277,18 +310,9 @@
     #panel { padding: 8px; gap: 8px; }
     .lbl { font-size: 10px; letter-spacing: .5px; }
     .lbl span { display: none; }
-    #angle {
-      width: 84px;
-      font-size: 16px;
-      padding: 10px 6px;
-    }
+    #angle { width: 84px; font-size: 16px; padding: 10px 6px; }
     .deg { font-size: 18px; margin-left: -4px; }
-    #fire {
-      flex: 1 1 auto;
-      padding: 12px 10px;
-      font-size: 14px;
-      letter-spacing: 1.5px;
-    }
+    #fire { flex: 1 1 auto; padding: 12px 10px; font-size: 14px; letter-spacing: 1.5px; }
     .hint { display: none; }
     #burger { width: 44px; height: 44px; }
   }
@@ -299,7 +323,6 @@
     #angle { width: 74px; }
   }
 
-  /* on very short landscape screens, tighten everything */
   @media (orientation: landscape) and (max-height: 460px) {
     body { padding: 4px; gap: 4px; }
     #panel { padding: 6px 10px; }
@@ -368,6 +391,16 @@
         </div>
       </div>
 
+      <div class="row">
+        <label>Voice feedback</label>
+        <div class="ctl">
+          <label class="switch">
+            <input id="setVoice" type="checkbox">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
       <div class="actions">
         <button id="btnDefaults">DEFAULTS</button>
         <button id="btnClose">CLOSE</button>
@@ -422,7 +455,8 @@
     markerStart:      500,
     timePerShot:      15,
     totalEnemies:     5,
-    breachesAllowed:  1
+    breachesAllowed:  1,
+    voiceOn:          true
   };
   const CFG = Object.assign({}, DEFAULTS);
 
@@ -448,6 +482,33 @@
   /* ============================================================ SETTINGS */
   const $ = id => document.getElementById(id);
 
+  /* -------- voice feedback (Web Speech API) -------- */
+  let voiceReady = false;
+  function initVoice() {
+    if (voiceReady || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    } catch (e) { /* ignore */ }
+    voiceReady = true;
+  }
+  function speak(text) {
+    if (!CFG.voiceOn) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate  = 1.05;
+      u.pitch = 1.0;
+      u.volume = 1.0;
+      const voices = window.speechSynthesis.getVoices();
+      const en = voices.find(v => /en[-_]/i.test(v.lang))
+              || voices.find(v => /en/i.test(v.lang));
+      if (en) u.voice = en;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* ignore */ }
+  }
+
   function openSettings() {
     $('setSteps').value   = CFG.stepsBeforeTower;
     $('setMarkers').value = CFG.markerCount;
@@ -455,6 +516,7 @@
     $('setTime').value    = CFG.timePerShot;
     $('setEnemies').value = CFG.totalEnemies;
     $('setBreach').value  = CFG.breachesAllowed;
+    $('setVoice').checked = CFG.voiceOn;
     modal.classList.remove('hide');
     G.paused = true;
     input.blur();
@@ -473,6 +535,7 @@
     $('setTime').value    = DEFAULTS.timePerShot;
     $('setEnemies').value = DEFAULTS.totalEnemies;
     $('setBreach').value  = DEFAULTS.breachesAllowed;
+    $('setVoice').checked = DEFAULTS.voiceOn;
   }
 
   function applySettings() {
@@ -487,8 +550,13 @@
     CFG.timePerShot      = num('setTime',    5, 60, DEFAULTS.timePerShot);
     CFG.totalEnemies     = num('setEnemies', 1,  5, DEFAULTS.totalEnemies);
     CFG.breachesAllowed  = num('setBreach',  1,  2, DEFAULTS.breachesAllowed);
+    CFG.voiceOn          = !!$('setVoice').checked;
+
     CFG.markerStart = Math.round(CFG.markerStart / 100) * 100;
     while (CFG.markerCount > 1 && CFG.markerStart + (CFG.markerCount - 1) * 100 > 1000) CFG.markerCount--;
+
+    // If voice was just turned on, prime the engine
+    if (CFG.voiceOn) initVoice();
 
     closeSettings();
 
@@ -602,12 +670,14 @@
       G.msg   = 'TARGET DOWN';
       G.sub   = '+' + pts + '   (range ' + Math.round(G.enemyDist) + ' m)';
       G.color = '#57e08a';
+      speak('Good headshot');
     } else {
       G.msg = s.timeout ? 'TIME OUT' : 'MISS';
       G.sub = s.timeout
         ? 'range was ' + Math.round(G.enemyDist) + ' m'
         : 'impact at ' + Math.round(s.impact) + ' m — target at ' + Math.round(G.enemyDist) + ' m';
       G.color = '#ff6b6b';
+      speak('Beware, enemy approaches');
     }
   }
 
@@ -971,6 +1041,14 @@
     ctx.fillStyle = G.breaches >= CFG.breachesAllowed ? '#ff5555' : '#9be8c0';
     ctx.fillText('BREACH ' + G.breaches + ' / ' + CFG.breachesAllowed, W - 62, 30);
 
+    // small voice indicator
+    if (!CFG.voiceOn) {
+      ctx.textAlign = 'right';
+      ctx.font = '10px "Courier New", monospace';
+      ctx.fillStyle = 'rgba(160,200,230,0.4)';
+      ctx.fillText('🔇', W - 20, 30);
+    }
+
     if (G.phase === 'aim') {
       const p = Math.max(0, G.timer / CFG.timePerShot);
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -1085,7 +1163,8 @@
       ['Marker signs',          CFG.markerCount + ' starting at ' + CFG.markerStart + ' m'],
       ['Time per shot',         CFG.timePerShot + ' s'],
       ['Enemies',               CFG.totalEnemies + ''],
-      ['Breaches allowed',      CFG.breachesAllowed + '']
+      ['Breaches allowed',      CFG.breachesAllowed + ''],
+      ['Voice feedback',        CFG.voiceOn ? 'ON' : 'OFF']
     ];
     let ry = by + 44;
     rows.forEach(([k, v]) => {
@@ -1093,7 +1172,7 @@
       ctx.fillText(k, bx + 16, ry);
       ctx.fillStyle = '#9be8c0';
       ctx.fillText(v, bx + 210, ry);
-      ry += 15;
+      ry += 14;
     });
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(160,200,230,0.6)';
@@ -1135,6 +1214,7 @@
 
   /* ============================================================== INPUT */
   btn.addEventListener('click', () => {
+    initVoice();  // unlocks speech on first user tap (needed on iOS)
     if (G.phase === 'menu' || G.phase === 'over' || G.phase === 'win') startMission();
     else if (G.phase === 'aim') fire();
   });
@@ -1143,7 +1223,6 @@
     if (e.key === 'Enter') { e.preventDefault(); fire(); }
   });
 
-  // also fire on "Go"/"Done" via input event when the user submits
   input.addEventListener('input', () => {
     if (/[^0-9.]/.test(input.value)) {
       input.value = input.value.replace(/[^0-9.]/g, '');
@@ -1164,6 +1243,18 @@
   $('btnClose').addEventListener('click', closeSettings);
   $('btnApply').addEventListener('click', applySettings);
   $('btnDefaults').addEventListener('click', fillDefaults);
+
+  // Voice toggle gives an instant preview when turned ON
+  $('setVoice').addEventListener('change', e => {
+    if (e.target.checked) {
+      // Temporarily allow voice so the user hears a sample
+      const wasOn = CFG.voiceOn;
+      CFG.voiceOn = true;
+      initVoice();
+      speak('Voice enabled');
+      CFG.voiceOn = wasOn;
+    }
+  });
 
   // Prevent double-tap zoom on iOS Safari
   let lastTouch = 0;
