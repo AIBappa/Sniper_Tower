@@ -2,56 +2,105 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05080b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Sniper Tower — Angle Calculator</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
   html, body {
-    margin: 0; min-height: 100%;
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+
+  body {
     background: radial-gradient(circle at 50% 0%, #16222e 0%, #05080b 70%);
     color: #cfe3f5;
     font-family: "Courier New", monospace;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: calc(6px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));
+    height: 100vh;
+    height: 100dvh;
   }
 
-  #stage { position: relative; width: 900px; max-width: 100%; }
+  /* ---------- stage: holds canvas + burger + modal ---------- */
+  #stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
   #game {
-    display: block; width: 100%; height: auto;
-    border-radius: 8px;
-    box-shadow: 0 12px 60px rgba(0,0,0,.85), 0 0 0 1px #24323f;
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    border-radius: 6px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.85), 0 0 0 1px #24323f;
+    background: #0a1015;
   }
 
   /* ---------- hamburger ---------- */
   #burger {
-    position: absolute; top: 10px; right: 10px;
-    width: 38px; height: 38px;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(10,20,30,.72);
-    color: #7fd4ff; font-size: 20px; line-height: 1;
-    border: 1px solid #2a4557; border-radius: 7px;
-    cursor: pointer; transition: .15s; z-index: 5;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10,20,30,.75);
+    color: #7fd4ff;
+    font-size: 22px;
+    line-height: 1;
+    border: 1px solid #2a4557;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: .15s;
+    z-index: 5;
     font-family: inherit;
+    padding: 0;
   }
   #burger:hover { background: rgba(24,50,72,.9); color: #b7ecff; border-color: #3f7fa8; }
   #burger:active { transform: translateY(1px); }
 
-  /* ---------- settings modal ---------- */
+  /* ---------- settings modal (fixed = covers whole screen incl. panel) ---------- */
   #modal {
-    position: absolute; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(3,7,11,.74);
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(3,7,11,.78);
+    -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
-    border-radius: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
   }
   #modal.hide { display: none; }
 
   .sheet {
-    width: min(430px, 94%);
-    max-height: 94%;
+    width: min(430px, 100%);
+    max-height: 100%;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
     background: linear-gradient(#101b25, #0a1219);
     border: 1px solid #22384a;
     border-radius: 10px;
@@ -60,69 +109,109 @@
   }
   .sheet h2 {
     margin: 0 0 4px;
-    font-size: 16px; letter-spacing: 2px;
+    font-size: 16px;
+    letter-spacing: 2px;
     color: #7fd4ff;
   }
   .sheet .note {
     margin: 0 0 14px;
-    font-size: 10px; letter-spacing: .5px;
-    color: #587184; line-height: 1.5;
+    font-size: 10px;
+    letter-spacing: .5px;
+    color: #587184;
+    line-height: 1.5;
   }
   .row {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 8px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
     border-top: 1px solid rgba(90,140,180,.13);
   }
   .row label {
-    font-size: 11px; letter-spacing: .6px;
-    color: #a8c4d8; line-height: 1.35; flex: 1;
+    font-size: 12px;
+    letter-spacing: .6px;
+    color: #a8c4d8;
+    line-height: 1.35;
+    flex: 1;
   }
   .row .ctl { display: flex; align-items: baseline; gap: 5px; }
   .row input {
-    width: 62px; padding: 6px 8px;
-    background: #060c12; color: #9be8c0;
-    border: 1px solid #2a4557; border-radius: 5px;
-    font-family: inherit; font-size: 15px; font-weight: bold;
-    text-align: center; outline: none;
+    width: 70px;
+    padding: 8px 8px;
+    background: #060c12;
+    color: #9be8c0;
+    border: 1px solid #2a4557;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 16px; /* keep >= 16 to prevent iOS zoom */
+    font-weight: bold;
+    text-align: center;
+    outline: none;
   }
   .row input:focus { border-color: #57e08a; box-shadow: 0 0 10px rgba(87,224,138,.3); }
-  .row .unit { font-size: 9px; color: #4d6577; letter-spacing: .5px; white-space: nowrap; }
+  .row .unit { font-size: 10px; color: #4d6577; letter-spacing: .5px; white-space: nowrap; }
 
-  .actions {
-    display: flex; gap: 8px; margin-top: 16px;
-  }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
   .actions button {
-    flex: 1; padding: 10px 6px;
-    font-family: inherit; font-size: 12px; font-weight: bold;
-    letter-spacing: 1.4px; cursor: pointer;
-    border-radius: 5px; transition: .12s;
+    flex: 1;
+    min-height: 44px;
+    padding: 10px 6px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1.4px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: .12s;
     border: 1px solid #2a4557;
-    background: #10202c; color: #8fb6cd;
+    background: #10202c;
+    color: #8fb6cd;
   }
   .actions button:hover { background: #172e3d; color: #cfe3f5; }
   .actions button.primary {
     background: linear-gradient(#2e5f43, #1c4430);
-    color: #b8ffd6; border-color: #46a06f;
+    color: #b8ffd6;
+    border-color: #46a06f;
   }
   .actions button.primary:hover { background: linear-gradient(#3b7a55, #245439); }
   .actions button:active { transform: translateY(1px); }
 
   /* ---------- bottom panel ---------- */
   #panel {
-    display: flex; align-items: center; gap: 12px;
-    width: 900px; max-width: 100%;
-    margin-top: 12px; padding: 10px 14px;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
     background: linear-gradient(#121e29, #0c1620);
-    border: 1px solid #1f2e3c; border-radius: 8px;
+    border: 1px solid #1f2e3c;
+    border-radius: 8px;
   }
-  .lbl { font-size: 11px; letter-spacing: 1px; color: #7fd4ff; line-height: 1.3; }
+
+  .lbl {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #7fd4ff;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
   .lbl span { color: #55707f; font-size: 9px; }
+
   #angle {
-    width: 130px; padding: 9px 10px;
-    background: #060c12; color: #9be8c0;
-    border: 1px solid #2a4557; border-radius: 5px;
-    font-family: inherit; font-size: 20px; font-weight: bold;
-    text-align: center; outline: none;
+    width: 130px;
+    padding: 10px 10px;
+    background: #060c12;
+    color: #9be8c0;
+    border: 1px solid #2a4557;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    outline: none;
   }
   #angle:focus { border-color: #57e08a; box-shadow: 0 0 12px rgba(87,224,138,.35); }
   #angle:disabled { opacity: .35; }
@@ -133,23 +222,98 @@
     75% { transform: translateX(5px); }
   }
   .deg { font-size: 22px; color: #55707f; margin-left: -6px; }
+
   #fire {
-    padding: 11px 26px; cursor: pointer;
+    min-height: 44px;
+    padding: 11px 26px;
+    cursor: pointer;
     background: linear-gradient(#2e5f43, #1c4430);
-    color: #b8ffd6; border: 1px solid #46a06f; border-radius: 5px;
-    font-family: inherit; font-size: 15px; font-weight: bold; letter-spacing: 2px;
+    color: #b8ffd6;
+    border: 1px solid #46a06f;
+    border-radius: 5px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 2px;
     transition: .12s;
   }
   #fire:hover:not(:disabled) { background: linear-gradient(#3b7a55, #245439); }
   #fire:active { transform: translateY(1px); }
-  .hint { margin-left: auto; font-size: 11px; color: #3f5a6b; text-align: right; line-height: 1.5; }
+  #fire:disabled { opacity: .55; }
+
+  .hint {
+    margin-left: auto;
+    font-size: 11px;
+    color: #3f5a6b;
+    text-align: right;
+    line-height: 1.5;
+  }
+
+  /* ---------- portrait hint ---------- */
+  #rotate {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(8,16,24,.85);
+    color: #9be8c0;
+    font-size: 11px;
+    letter-spacing: .8px;
+    padding: 6px 12px;
+    border: 1px solid #2a4557;
+    border-radius: 20px;
+    pointer-events: none;
+    z-index: 4;
+    display: none;
+    white-space: nowrap;
+  }
+  @media (orientation: portrait) and (max-width: 720px) {
+    #rotate { display: block; }
+  }
+
+  /* ---------- compact mobile panel ---------- */
+  @media (max-width: 640px) {
+    body { padding: calc(4px + env(safe-area-inset-top)) 4px calc(4px + env(safe-area-inset-bottom)); gap: 4px; }
+    #panel { padding: 8px; gap: 8px; }
+    .lbl { font-size: 10px; letter-spacing: .5px; }
+    .lbl span { display: none; }
+    #angle {
+      width: 84px;
+      font-size: 16px;
+      padding: 10px 6px;
+    }
+    .deg { font-size: 18px; margin-left: -4px; }
+    #fire {
+      flex: 1 1 auto;
+      padding: 12px 10px;
+      font-size: 14px;
+      letter-spacing: 1.5px;
+    }
+    .hint { display: none; }
+    #burger { width: 44px; height: 44px; }
+  }
+
+  @media (max-width: 400px) {
+    #panel { padding: 6px; gap: 6px; }
+    .lbl { font-size: 9px; }
+    #angle { width: 74px; }
+  }
+
+  /* on very short landscape screens, tighten everything */
+  @media (orientation: landscape) and (max-height: 460px) {
+    body { padding: 4px; gap: 4px; }
+    #panel { padding: 6px 10px; }
+    #angle { padding: 8px 8px; }
+    #fire { padding: 9px 18px; font-size: 13px; }
+  }
 </style>
 </head>
 <body>
 
 <div id="stage">
   <canvas id="game" width="900" height="520"></canvas>
-  <button id="burger" title="Mission settings">☰</button>
+  <button id="burger" aria-label="Mission settings">☰</button>
+  <div id="rotate">↻ Rotate device for a larger view</div>
 
   <div id="modal" class="hide">
     <div class="sheet">
@@ -159,7 +323,7 @@
       <div class="row">
         <label>Misses before an enemy reaches the tower</label>
         <div class="ctl">
-          <input id="setSteps" type="number" min="1" max="6" step="1">
+          <input id="setSteps" type="number" min="1" max="6" step="1" inputmode="numeric">
           <span class="unit">misses</span>
         </div>
       </div>
@@ -167,7 +331,7 @@
       <div class="row">
         <label>Number of marker signs shown</label>
         <div class="ctl">
-          <input id="setMarkers" type="number" min="1" max="6" step="1">
+          <input id="setMarkers" type="number" min="1" max="6" step="1" inputmode="numeric">
           <span class="unit">signs</span>
         </div>
       </div>
@@ -175,7 +339,7 @@
       <div class="row">
         <label>First marker distance from tower</label>
         <div class="ctl">
-          <input id="setStart" type="number" min="100" max="900" step="100">
+          <input id="setStart" type="number" min="100" max="900" step="100" inputmode="numeric">
           <span class="unit">m</span>
         </div>
       </div>
@@ -183,7 +347,7 @@
       <div class="row">
         <label>Time to calculate each angle</label>
         <div class="ctl">
-          <input id="setTime" type="number" min="5" max="60" step="1">
+          <input id="setTime" type="number" min="5" max="60" step="1" inputmode="numeric">
           <span class="unit">sec</span>
         </div>
       </div>
@@ -191,7 +355,7 @@
       <div class="row">
         <label>Number of enemies in the mission</label>
         <div class="ctl">
-          <input id="setEnemies" type="number" min="1" max="5" step="1">
+          <input id="setEnemies" type="number" min="1" max="5" step="1" inputmode="numeric">
           <span class="unit">enemies</span>
         </div>
       </div>
@@ -199,7 +363,7 @@
       <div class="row">
         <label>Enemies allowed to reach tower before you die</label>
         <div class="ctl">
-          <input id="setBreach" type="number" min="1" max="2" step="1">
+          <input id="setBreach" type="number" min="1" max="2" step="1" inputmode="numeric">
           <span class="unit">breaches</span>
         </div>
       </div>
@@ -215,7 +379,10 @@
 
 <div id="panel">
   <div class="lbl">ANGLE<br><span>degrees below horizon</span></div>
-  <input id="angle" type="number" step="0.1" min="0" max="90" placeholder="0.0" disabled>
+  <input id="angle" type="number" step="0.1" min="0" max="90"
+         inputmode="decimal" enterkeyhint="go"
+         autocomplete="off" autocorrect="off" spellcheck="false"
+         placeholder="0.0" disabled>
   <span class="deg">°</span>
   <button id="fire">START</button>
   <div class="hint">
@@ -240,8 +407,8 @@
   const W = 900, H = 520;
   const GROUND_Y = 430;
   const ORIGIN_X = 70;
-  const PPM      = 0.8;                       // pixels per metre
-  const TOWER_H  = 120;                       // metres
+  const PPM      = 0.8;
+  const TOWER_H  = 120;
   const TOWER_TOP_Y = GROUND_Y - TOWER_H * PPM;
   const MUZZLE_Y    = TOWER_TOP_Y;
 
@@ -250,26 +417,26 @@
 
   /* ============================================================== CONFIG */
   const DEFAULTS = {
-    stepsBeforeTower: 3,   // 1) misses before that enemy reaches the tower
-    markerCount:      3,   // 2a) how many marker signs
-    markerStart:      500, // 2b) distance of first marker
-    timePerShot:      15,  // 3) seconds to calculate each angle
-    totalEnemies:     5,   // 4) enemies in the mission (1..5)
-    breachesAllowed:  1    // 5) enemies allowed to reach tower (1..2)
+    stepsBeforeTower: 3,
+    markerCount:      3,
+    markerStart:      500,
+    timePerShot:      15,
+    totalEnemies:     5,
+    breachesAllowed:  1
   };
   const CFG = Object.assign({}, DEFAULTS);
 
   /* =============================================================== STATE */
   const G = {
-    phase: 'menu',        // menu | aim | fly | impact | incoming | over | win
+    phase: 'menu',
     t: 0,
     clock: 0,
-    enemyIndex: 0,        // which enemy (0-based)
-    step: 0,              // how many misses on the current enemy
+    enemyIndex: 0,
+    step: 0,
     breaches: 0,
     kills: 0,
     score: 0,
-    plan: [],             // distances for current enemy, one per step
+    plan: [],
     enemyDist: 0,
     enemyVisible: false,
     timer: 0,
@@ -288,7 +455,6 @@
     $('setTime').value    = CFG.timePerShot;
     $('setEnemies').value = CFG.totalEnemies;
     $('setBreach').value  = CFG.breachesAllowed;
-
     modal.classList.remove('hide');
     G.paused = true;
     input.blur();
@@ -315,21 +481,14 @@
       if (!isFinite(v)) return def;
       return Math.max(lo, Math.min(hi, Math.round(v)));
     };
-
     CFG.stepsBeforeTower = num('setSteps',   1,  6, DEFAULTS.stepsBeforeTower);
     CFG.markerCount      = num('setMarkers', 1,  6, DEFAULTS.markerCount);
     CFG.markerStart      = num('setStart', 100, 900, DEFAULTS.markerStart);
     CFG.timePerShot      = num('setTime',    5, 60, DEFAULTS.timePerShot);
     CFG.totalEnemies     = num('setEnemies', 1,  5, DEFAULTS.totalEnemies);
     CFG.breachesAllowed  = num('setBreach',  1,  2, DEFAULTS.breachesAllowed);
-
     CFG.markerStart = Math.round(CFG.markerStart / 100) * 100;
-
-    // keep every marker on screen (max 1000 m)
-    while (CFG.markerCount > 1 &&
-           CFG.markerStart + (CFG.markerCount - 1) * 100 > 1000) {
-      CFG.markerCount--;
-    }
+    while (CFG.markerCount > 1 && CFG.markerStart + (CFG.markerCount - 1) * 100 > 1000) CFG.markerCount--;
 
     closeSettings();
 
@@ -344,22 +503,18 @@
   }
 
   /* =============================================================== HELPERS */
-  const maxRange = () =>
-    Math.min(CFG.markerStart + (CFG.markerCount - 1) * 100, 1000);
+  const maxRange = () => Math.min(CFG.markerStart + (CFG.markerCount - 1) * 100, 1000);
 
-  /** Builds a descending list of distances, one per "step" of one enemy. */
   function makePlan() {
     const steps = Math.max(1, CFG.stepsBeforeTower);
     const hi = Math.max(220, maxRange());
     const lo = Math.max(hi * 0.5, 140);
-
     let d = lo + Math.random() * (hi - lo);
     const plan = [d];
     const MIN_END = 65;
-
     for (let s = 1; s < steps; s++) {
       const remain = steps - s;
-      const frac = 0.5 + Math.random() * 0.22;          // shrink each step
+      const frac = 0.5 + Math.random() * 0.22;
       let nd = d * frac;
       const floorForRemaining = MIN_END + (remain - 1) * 22;
       nd = Math.max(nd, floorForRemaining);
@@ -373,67 +528,58 @@
   /* ================================================================= FLOW */
   function syncUI() {
     const p = G.phase;
-    if (p === 'menu')                 { btn.textContent = 'START';       input.disabled = true;  }
-    else if (p === 'aim')             { btn.textContent = 'FIRE';        input.disabled = false; }
-    else if (p === 'over' || p === 'win') { btn.textContent = 'PLAY AGAIN'; input.disabled = true; }
-    else                              { btn.textContent = '···';         input.disabled = true;  }
+    if (p === 'menu')                     { btn.textContent = 'START';       input.disabled = true;  }
+    else if (p === 'aim')                 { btn.textContent = 'FIRE';        input.disabled = false; }
+    else if (p === 'over' || p === 'win') { btn.textContent = 'PLAY AGAIN'; input.disabled = true;  }
+    else                                  { btn.textContent = '···';         input.disabled = true;  }
   }
 
   function startMission() {
-    G.enemyIndex = 0;
-    G.step = 0;
-    G.breaches = 0;
-    G.kills = 0;
-    G.score = 0;
-    G.shot = null;
+    G.enemyIndex = 0; G.step = 0; G.breaches = 0;
+    G.kills = 0; G.score = 0; G.shot = null;
     spawnEnemy(0);
   }
 
   function spawnEnemy(i) {
-    G.enemyIndex   = i;
-    G.step         = 0;
-    G.plan         = makePlan();
-    G.enemyDist    = G.plan[0];
+    G.enemyIndex = i;
+    G.step = 0;
+    G.plan = makePlan();
+    G.enemyDist = G.plan[0];
     G.enemyVisible = true;
-    G.timer        = CFG.timePerShot;
-    G.shot         = null;
+    G.timer = CFG.timePerShot;
+    G.shot = null;
     G.msg = ''; G.sub = '';
     G.phase = 'aim';
     G.t = 0;
     input.value = '';
     syncUI();
-    setTimeout(() => {
-      if (G.phase === 'aim' && !G.paused) input.focus();
-    }, 40);
+    focusInputSoon();
   }
 
   function focusInputSoon() {
     setTimeout(() => {
-      if (G.phase === 'aim' && !G.paused) input.focus();
+      if (G.phase === 'aim' && !G.paused) {
+        try { input.focus({ preventScroll: true }); } catch(e) { input.focus(); }
+      }
     }, 40);
   }
 
   function fire() {
     if (G.phase !== 'aim') return;
-
     const raw = parseFloat(input.value);
     if (!isFinite(raw)) {
       input.classList.add('err');
       setTimeout(() => input.classList.remove('err'), 400);
       return;
     }
-
     const ang = Math.max(0, Math.min(90, raw));
     const rad = ang * Math.PI / 180;
-
     let impact;
     if (ang >= 89.5) impact = 0;
     else impact = TOWER_H / Math.tan(rad);
     if (!isFinite(impact)) impact = 99999;
-
     const tol = 15 + G.enemyDist * 0.05;
     const hit = Math.abs(impact - G.enemyDist) <= tol;
-
     G.shot = { angle: ang, impact, hit, tol, timeout: false };
     G.phase = 'fly';
     G.t = 0;
@@ -460,59 +606,34 @@
       G.msg = s.timeout ? 'TIME OUT' : 'MISS';
       G.sub = s.timeout
         ? 'range was ' + Math.round(G.enemyDist) + ' m'
-        : 'impact at ' + Math.round(s.impact) + ' m — target at ' +
-          Math.round(G.enemyDist) + ' m';
+        : 'impact at ' + Math.round(s.impact) + ' m — target at ' + Math.round(G.enemyDist) + ' m';
       G.color = '#ff6b6b';
     }
   }
 
-  /** Runs once the impact animation finishes. */
   function afterImpact() {
     const s = G.shot;
 
-    /* ---------------- HIT ---------------- */
     if (s && s.hit) {
       G.kills++;
       G.enemyVisible = false;
       G.shot = null;
-
-      if (G.enemyIndex + 1 >= CFG.totalEnemies) {
-        G.phase = 'win';
-        syncUI();
-        return;
-      }
-      G.phase = 'incoming';
-      G.t = 0;
-      syncUI();
+      if (G.enemyIndex + 1 >= CFG.totalEnemies) { G.phase = 'win'; syncUI(); return; }
+      G.phase = 'incoming'; G.t = 0; syncUI();
       return;
     }
 
-    /* ---------------- MISS / TIME OUT ---------------- */
     G.step++;
-
     if (G.step >= CFG.stepsBeforeTower) {
-      // Enemy reached the tower.
       G.breaches++;
       G.enemyVisible = false;
       G.shot = null;
-
-      if (G.breaches >= CFG.breachesAllowed) {
-        G.phase = 'over';
-        syncUI();
-        return;
-      }
-      if (G.enemyIndex + 1 >= CFG.totalEnemies) {
-        G.phase = 'win';
-        syncUI();
-        return;
-      }
-      G.phase = 'incoming';
-      G.t = 0;
-      syncUI();
+      if (G.breaches >= CFG.breachesAllowed) { G.phase = 'over'; syncUI(); return; }
+      if (G.enemyIndex + 1 >= CFG.totalEnemies) { G.phase = 'win'; syncUI(); return; }
+      G.phase = 'incoming'; G.t = 0; syncUI();
       return;
     }
 
-    // Enemy just moved closer — same enemy, new distance.
     G.enemyDist = G.plan[G.step];
     G.timer = CFG.timePerShot;
     G.shot = null;
@@ -539,7 +660,6 @@
   function update(dt) {
     G.clock += dt;
     if (G.paused) return;
-
     switch (G.phase) {
       case 'aim':
         G.timer -= dt;
@@ -567,20 +687,15 @@
     drawTicks();
     drawMarkers();
     drawTower();
-
     if (G.phase !== 'menu' && G.enemyVisible) drawEnemy();
     if (G.shot) drawShot();
-
     drawHUD();
-
     if (G.phase !== 'menu') drawRangeCard();
-
     if (G.phase === 'menu')  drawMenu();
     if (G.phase === 'over')  drawEnd(false);
     if (G.phase === 'win')   drawEnd(true);
   }
 
-  /* ---------------------------------------------------------------- sky */
   function drawSky() {
     const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
     g.addColorStop(0.00, '#0a1420');
@@ -603,10 +718,8 @@
     g.addColorStop(1, '#14180f');
     ctx.fillStyle = g;
     ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
-
     ctx.fillStyle = 'rgba(255,180,120,0.30)';
     ctx.fillRect(0, GROUND_Y, W, 2);
-
     ctx.strokeStyle = 'rgba(0,0,0,0.25)';
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -620,31 +733,25 @@
     for (let m = 100; m <= 1000; m += 100) {
       const x = wx(m);
       if (x > W - 6) continue;
-
       ctx.strokeStyle = 'rgba(200,230,255,0.18)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x, GROUND_Y + 2);
       ctx.lineTo(x, GROUND_Y + 12);
       ctx.stroke();
-
       ctx.fillStyle = 'rgba(180,215,240,0.35)';
       ctx.font = '10px "Courier New", monospace';
       ctx.fillText(m, x, GROUND_Y + 26);
     }
   }
 
-  /* ------------------------------------------------------------ markers */
   function drawMarkers() {
     const start = CFG.markerStart;
     const count = CFG.markerCount;
-
     for (let i = 0; i < count; i++) {
       const m = start + i * 100;
       const x = wx(m);
       if (x > W - 24) continue;
-
-      // vertical dashed guide
       ctx.save();
       ctx.setLineDash([3, 7]);
       ctx.strokeStyle = 'rgba(216,180,90,0.30)';
@@ -654,16 +761,12 @@
       ctx.lineTo(x, 90);
       ctx.stroke();
       ctx.restore();
-
-      // post
       ctx.strokeStyle = '#d8b45a';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x, GROUND_Y);
       ctx.lineTo(x, GROUND_Y - 34);
       ctx.stroke();
-
-      // sign
       ctx.fillStyle = 'rgba(216,180,90,0.92)';
       ctx.fillRect(x - 25, GROUND_Y - 54, 50, 20);
       ctx.fillStyle = '#1a1508';
@@ -673,12 +776,10 @@
     }
   }
 
-  /* -------------------------------------------------------------- tower */
   function drawTower() {
     const bx = ORIGIN_X;
     const topY = TOWER_TOP_Y;
     const baseHalf = 15, topHalf = 8;
-
     ctx.strokeStyle = '#3d4a56';
     ctx.lineWidth = 3.5;
     ctx.beginPath();
@@ -687,7 +788,6 @@
     ctx.moveTo(bx + baseHalf, GROUND_Y);
     ctx.lineTo(bx + topHalf, topY);
     ctx.stroke();
-
     ctx.strokeStyle = '#2b3742';
     ctx.lineWidth = 1.1;
     const segs = 8;
@@ -697,28 +797,23 @@
       const h1 = baseHalf + (topHalf - baseHalf) * t1;
       const y0 = GROUND_Y + (topY - GROUND_Y) * t0;
       const y1 = GROUND_Y + (topY - GROUND_Y) * t1;
-
       ctx.beginPath();
       ctx.moveTo(bx - h0, y0); ctx.lineTo(bx + h1, y1);
       ctx.moveTo(bx + h0, y0); ctx.lineTo(bx - h1, y1);
       ctx.moveTo(bx - h1, y1); ctx.lineTo(bx + h1, y1);
       ctx.stroke();
     }
-
     ctx.fillStyle = '#4b5866';
     ctx.fillRect(bx - 16, topY - 7, 32, 7);
     ctx.strokeStyle = '#66788a';
     ctx.lineWidth = 1;
     ctx.strokeRect(bx - 16, topY - 7, 32, 7);
-
     ctx.strokeStyle = '#5a6b7a';
     ctx.beginPath();
     ctx.moveTo(bx - 14, topY - 7);  ctx.lineTo(bx - 14, topY - 18);
     ctx.moveTo(bx + 14, topY - 7);  ctx.lineTo(bx + 14, topY - 18);
     ctx.moveTo(bx - 14, topY - 18); ctx.lineTo(bx + 14, topY - 18);
     ctx.stroke();
-
-    // sniper silhouette
     ctx.fillStyle = '#161d25';
     ctx.beginPath();
     ctx.ellipse(bx - 2, topY - 10, 11, 4.5, 0, 0, Math.PI * 2);
@@ -732,8 +827,6 @@
     ctx.moveTo(bx + 6, topY - 11);
     ctx.lineTo(bx + 24, topY - 9);
     ctx.stroke();
-
-    // angle gauge arc
     ctx.save();
     ctx.setLineDash([3, 5]);
     ctx.strokeStyle = 'rgba(140,220,255,0.22)';
@@ -742,7 +835,6 @@
     ctx.arc(bx, topY, 52, 0, Math.PI / 2);
     ctx.stroke();
     ctx.restore();
-
     for (let a = 0; a <= 90; a += 15) {
       const r = a * Math.PI / 180;
       const c = Math.cos(r), s = Math.sin(r);
@@ -755,17 +847,14 @@
     }
   }
 
-  /* -------------------------------------------------------------- enemy */
   function drawEnemy() {
     const x = wx(G.enemyDist);
     const y = GROUND_Y;
     const pulse = 0.5 + 0.5 * Math.sin(G.clock * 7);
-
     ctx.beginPath();
     ctx.ellipse(x, y, 17 + pulse * 6, 6 + pulse * 2.5, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,60,60,0.16)';
     ctx.fill();
-
     ctx.save();
     ctx.translate(x, y);
     ctx.fillStyle = '#ff3b3b';
@@ -778,8 +867,6 @@
     ctx.fillRect(-8, -19, 3, 8);
     ctx.fillRect(5, -19, 3, 8);
     ctx.restore();
-
-    // chevron
     ctx.beginPath();
     ctx.moveTo(x - 7, y - 42);
     ctx.lineTo(x + 7, y - 42);
@@ -787,36 +874,27 @@
     ctx.closePath();
     ctx.fillStyle = 'rgba(255,70,70,' + (0.55 + pulse * 0.45) + ')';
     ctx.fill();
-
-    // distance tag
     ctx.fillStyle = 'rgba(255,120,120,0.85)';
     ctx.font = 'bold 10px "Courier New", monospace';
     ctx.textAlign = 'center';
     ctx.fillText(Math.round(G.enemyDist) + 'm', x, y - 50);
   }
 
-  /* --------------------------------------------------------------- shot */
   function drawShot() {
     const s = G.shot;
     if (s.angle == null) return;
-
     const rad = s.angle * Math.PI / 180;
     const tx = ORIGIN_X, ty = MUZZLE_Y;
     const dx = Math.cos(rad), dy = Math.sin(rad);
-
     let len = 6000;
     if (dy > 1e-6) len = Math.min(len, (GROUND_Y - ty) / dy);
     if (dx > 1e-6) len = Math.min(len, (W + 80 - tx) / dx);
-
     const ex = tx + dx * len;
     const ey = ty + dy * len;
-
     let p = 1;
     if (G.phase === 'fly') p = Math.min(1, G.t / 0.28);
-
     const bx = tx + (ex - tx) * p;
     const by = ty + (ey - ty) * p;
-
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(tx, ty);
@@ -827,17 +905,14 @@
     ctx.shadowBlur = 10;
     ctx.stroke();
     ctx.restore();
-
     if (G.phase === 'fly') {
       ctx.beginPath();
       ctx.arc(bx, by, 3.2, 0, Math.PI * 2);
       ctx.fillStyle = '#fff6c4';
       ctx.fill();
     }
-
     if (G.phase === 'impact') {
       const ip = Math.min(1, G.t / 0.6);
-
       if (s.hit) {
         const hx = wx(G.enemyDist);
         const hy = GROUND_Y - 14;
@@ -859,7 +934,6 @@
         ctx.strokeStyle = 'rgba(220,190,130,' + (1 - ip) * 0.9 + ')';
         ctx.lineWidth = 2.5;
         ctx.stroke();
-
         ctx.strokeStyle = 'rgba(255,90,90,' + (1 - ip) * 0.9 + ')';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -868,7 +942,6 @@
         ctx.moveTo(ex + 7, GROUND_Y - 7);
         ctx.lineTo(ex - 7, GROUND_Y + 7);
         ctx.stroke();
-
         ctx.fillStyle = 'rgba(255,140,140,' + (1 - ip) * 0.8 + ')';
         ctx.font = 'bold 11px "Courier New", monospace';
         ctx.textAlign = 'center';
@@ -877,18 +950,15 @@
     }
   }
 
-  /* ---------------------------------------------------------------- HUD */
   function drawHUD() {
     ctx.fillStyle = 'rgba(6,12,18,0.78)';
     ctx.fillRect(0, 0, W, 46);
     ctx.fillStyle = 'rgba(120,200,255,0.18)';
     ctx.fillRect(0, 45, W, 1);
-
     ctx.font = 'bold 17px "Courier New", monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#7fd4ff';
     ctx.fillText('SCORE ' + G.score, 16, 30);
-
     ctx.textAlign = 'center';
     ctx.fillStyle = '#cfe3f5';
     if (G.phase === 'menu') {
@@ -897,26 +967,20 @@
       ctx.fillText('ENEMY ' + Math.min(G.enemyIndex + 1, CFG.totalEnemies) +
                    ' / ' + CFG.totalEnemies, W / 2, 30);
     }
-
     ctx.textAlign = 'right';
-    const breachCol = G.breaches >= CFG.breachesAllowed ? '#ff5555' : '#9be8c0';
-    ctx.fillStyle = breachCol;
+    ctx.fillStyle = G.breaches >= CFG.breachesAllowed ? '#ff5555' : '#9be8c0';
     ctx.fillText('BREACH ' + G.breaches + ' / ' + CFG.breachesAllowed, W - 62, 30);
 
-    // timer bar
     if (G.phase === 'aim') {
       const p = Math.max(0, G.timer / CFG.timePerShot);
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.fillRect(0, 46, W, 6);
       ctx.fillStyle = p > 0.5 ? '#57e08a' : p > 0.25 ? '#f5c542' : '#ff5555';
       ctx.fillRect(0, 46, W * p, 6);
-
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
       ctx.font = 'bold 12px "Courier New", monospace';
       ctx.textAlign = 'right';
       ctx.fillText(G.timer.toFixed(1) + 's', W - 16, 70);
-
-      // step pips (misses used on this enemy)
       ctx.textAlign = 'left';
       const total = CFG.stepsBeforeTower;
       for (let i = 0; i < total; i++) {
@@ -931,7 +995,6 @@
       ctx.fillText('MISSES', 16 + total * 14 + 8, 69);
     }
 
-    // result banner
     if (G.phase === 'impact') {
       ctx.textAlign = 'center';
       ctx.font = 'bold 44px "Courier New", monospace';
@@ -940,7 +1003,6 @@
       ctx.shadowBlur = 22;
       ctx.fillText(G.msg, W / 2, 175);
       ctx.shadowBlur = 0;
-
       ctx.font = '14px "Courier New", monospace';
       ctx.fillStyle = 'rgba(220,235,250,0.75)';
       ctx.fillText(G.sub, W / 2, 205);
@@ -952,13 +1014,11 @@
       ctx.fillStyle = '#ffb347';
       ctx.shadowColor = '#ffb347';
       ctx.shadowBlur = 18;
-      ctx.fillText('ENEMY ' + (G.enemyIndex + 2) + ' / ' + CFG.totalEnemies +
-                   '  INCOMING', W / 2, 180);
+      ctx.fillText('ENEMY ' + (G.enemyIndex + 2) + ' / ' + CFG.totalEnemies + '  INCOMING', W / 2, 180);
       ctx.shadowBlur = 0;
     }
   }
 
-  /* --------------------------------------------------------- dope card */
   function drawRangeCard() {
     const x = 14, y = 56, w = 168, h = 244;
     ctx.fillStyle = 'rgba(8,16,24,0.74)';
@@ -966,76 +1026,59 @@
     ctx.strokeStyle = 'rgba(120,200,255,0.22)';
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-
     ctx.textAlign = 'left';
     ctx.font = 'bold 12px "Courier New", monospace';
     ctx.fillStyle = '#7fd4ff';
     ctx.fillText('DOPE CARD', x + 12, y + 20);
-
     ctx.font = '10px "Courier New", monospace';
     ctx.fillStyle = 'rgba(160,200,230,0.45)';
     ctx.fillText('RANGE', x + 12, y + 38);
     ctx.fillText('ANGLE', x + 88, y + 38);
-
-    // highlight the distances that currently have marker signs
     const mStart = CFG.markerStart;
     const mEnd   = mStart + (CFG.markerCount - 1) * 100;
-
     let yy = y + 58;
     for (let m = 1000; m >= 100; m -= 100) {
       const marked = m >= mStart && m <= mEnd && (m - mStart) % 100 === 0;
-
       if (marked) {
         ctx.fillStyle = 'rgba(216,180,90,0.13)';
         ctx.fillRect(x + 4, yy - 12, w - 8, 17);
       }
-
       ctx.font = '12px "Courier New", monospace';
       ctx.fillStyle = marked ? '#ffd98a' : 'rgba(207,227,245,0.9)';
       ctx.fillText(m + ' m', x + 12, yy);
-
       ctx.fillStyle = marked ? '#b8ffd6' : '#9be8c0';
       ctx.fillText(angleFor(m).toFixed(1) + '\u00B0', x + 88, yy);
       yy += 18;
     }
   }
 
-  /* --------------------------------------------------------------- menu */
   function drawMenu() {
     ctx.fillStyle = 'rgba(4,9,14,0.80)';
     ctx.fillRect(0, 0, W, H);
-
     ctx.textAlign = 'center';
-
     ctx.font = 'bold 50px "Courier New", monospace';
     ctx.fillStyle = '#7fd4ff';
     ctx.shadowColor = '#2f9fd0';
     ctx.shadowBlur = 26;
     ctx.fillText('SNIPER TOWER', W / 2, 130);
     ctx.shadowBlur = 0;
-
     ctx.font = '14px "Courier New", monospace';
     ctx.fillStyle = '#9be8c0';
     ctx.fillText('Enemies approach one after another. Drop a round on each.', W / 2, 172);
-
     ctx.fillStyle = 'rgba(207,227,245,0.85)';
     ctx.font = '13px "Courier New", monospace';
     ctx.fillText('Enter the barrel angle (degrees BELOW horizontal).', W / 2, 212);
     ctx.fillText('Use the marker signs and the dope card on the left.', W / 2, 234);
-
-    // current settings summary
     const bx = W / 2 - 230, by = 262, bw = 460, bh = 122;
     ctx.fillStyle = 'rgba(10,22,32,0.85)';
     ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = 'rgba(120,200,255,0.25)';
     ctx.lineWidth = 1;
     ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-
     ctx.textAlign = 'left';
     ctx.font = 'bold 11px "Courier New", monospace';
     ctx.fillStyle = '#7fd4ff';
     ctx.fillText('CURRENT MISSION SETTINGS', bx + 16, by + 22);
-
     ctx.font = '12px "Courier New", monospace';
     const rows = [
       ['Misses before tower',   CFG.stepsBeforeTower + ''],
@@ -1052,22 +1095,18 @@
       ctx.fillText(v, bx + 210, ry);
       ry += 15;
     });
-
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(160,200,230,0.6)';
     ctx.font = '12px "Courier New", monospace';
-    ctx.fillText('Click ☰ (top right) to change settings', W / 2, 412);
-
+    ctx.fillText('Tap ☰ (top right) to change settings', W / 2, 412);
     ctx.fillStyle = '#7fd4ff';
     ctx.font = 'bold 18px "Courier New", monospace';
     ctx.fillText('PRESS  START', W / 2, 462);
   }
 
-  /* --------------------------------------------------------------- end */
   function drawEnd(won) {
     ctx.fillStyle = won ? 'rgba(4,20,12,0.84)' : 'rgba(24,4,4,0.84)';
     ctx.fillRect(0, 0, W, H);
-
     ctx.textAlign = 'center';
     ctx.font = 'bold 52px "Courier New", monospace';
     ctx.fillStyle = won ? '#57e08a' : '#ff5555';
@@ -1075,25 +1114,20 @@
     ctx.shadowBlur = 28;
     ctx.fillText(won ? 'SECTOR SECURED' : 'YOU ARE DEAD', W / 2, 190);
     ctx.shadowBlur = 0;
-
     ctx.font = '15px "Courier New", monospace';
     ctx.fillStyle = 'rgba(220,235,250,0.85)';
     ctx.fillText(won
       ? 'All ' + CFG.totalEnemies + ' contacts eliminated.'
       : 'The enemy reached the tower and overran your position.', W / 2, 234);
-
     ctx.font = 'bold 26px "Courier New", monospace';
     ctx.fillStyle = '#ffd24a';
     ctx.fillText('FINAL SCORE  ' + G.score, W / 2, 300);
-
     ctx.font = '16px "Courier New", monospace';
     ctx.fillStyle = '#9be8c0';
     ctx.fillText('TARGETS DOWN  ' + G.kills + ' / ' + CFG.totalEnemies, W / 2, 336);
-
     ctx.fillStyle = 'rgba(255,120,120,0.85)';
     ctx.font = '14px "Courier New", monospace';
     ctx.fillText('BREACHES  ' + G.breaches + ' / ' + CFG.breachesAllowed, W / 2, 362);
-
     ctx.fillStyle = 'rgba(160,200,230,0.6)';
     ctx.font = '14px "Courier New", monospace';
     ctx.fillText('Press  PLAY AGAIN  to re-deploy', W / 2, 424);
@@ -1109,11 +1143,15 @@
     if (e.key === 'Enter') { e.preventDefault(); fire(); }
   });
 
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !modal.classList.contains('hide')) {
-      closeSettings();
-      return;
+  // also fire on "Go"/"Done" via input event when the user submits
+  input.addEventListener('input', () => {
+    if (/[^0-9.]/.test(input.value)) {
+      input.value = input.value.replace(/[^0-9.]/g, '');
     }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.classList.contains('hide')) { closeSettings(); return; }
     if (G.phase === 'aim' && !G.paused && document.activeElement !== input) {
       if (/^[0-9.]$/.test(e.key)) input.focus();
     }
@@ -1126,6 +1164,14 @@
   $('btnClose').addEventListener('click', closeSettings);
   $('btnApply').addEventListener('click', applySettings);
   $('btnDefaults').addEventListener('click', fillDefaults);
+
+  // Prevent double-tap zoom on iOS Safari
+  let lastTouch = 0;
+  document.addEventListener('touchend', e => {
+    const now = Date.now();
+    if (now - lastTouch <= 300) e.preventDefault();
+    lastTouch = now;
+  }, { passive: false });
 
   /* ================================================================= GO */
   syncUI();
