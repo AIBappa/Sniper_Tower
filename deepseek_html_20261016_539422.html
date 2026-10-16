@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sniper Tower — Angle Calculator</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background: radial-gradient(circle at 50% 0%, #16222e 0%, #05080b 70%);
+    color: #cfe3f5;
+    font-family: "Courier New", monospace;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 14px;
+  }
+  #game {
+    display: block; width: 900px; max-width: 100%; height: auto;
+    border-radius: 8px;
+    box-shadow: 0 12px 60px rgba(0,0,0,.85), 0 0 0 1px #24323f;
+  }
+  #panel {
+    display: flex; align-items: center; gap: 12px;
+    width: 900px; max-width: 100%;
+    margin-top: 12px; padding: 10px 14px;
+    background: linear-gradient(#121e29, #0c1620);
+    border: 1px solid #1f2e3c; border-radius: 8px;
+  }
+  .lbl { font-size: 11px; letter-spacing: 1px; color: #7fd4ff; line-height: 1.3; }
+  .lbl span { color: #55707f; font-size: 9px; }
+  #angle {
+    width: 130px; padding: 9px 10px;
+    background: #060c12; color: #9be8c0;
+    border: 1px solid #2a4557; border-radius: 5px;
+    font-family: inherit; font-size: 20px; font-weight: bold;
+    text-align: center; outline: none;
+  }
+  #angle:focus { border-color: #57e08a; box-shadow: 0 0 12px rgba(87,224,138,.35); }
+  #angle:disabled { opacity: .35; }
+  #angle.err { border-color: #ff5555; animation: shake .35s; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  .deg { font-size: 22px; color: #55707f; margin-left: -6px; }
+  #fire {
+    padding: 11px 26px; cursor: pointer;
+    background: linear-gradient(#2e5f43, #1c4430);
+    color: #b8ffd6; border: 1px solid #46a06f; border-radius: 5px;
+    font-family: inherit; font-size: 15px; font-weight: bold; letter-spacing: 2px;
+    transition: .12s;
+  }
+  #fire:hover:not(:disabled) { background: linear-gradient(#3b7a55, #245439); }
+  #fire:active { transform: translateY(1px); }
+  .hint { margin-left: auto; font-size: 11px; color: #3f5a6b; text-align: right; line-height: 1.5; }
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="520"></canvas>
+
+<div id="panel">
+  <div class="lbl">ANGLE<br><span>degrees below horizon</span></div>
+  <input id="angle" type="number" step="0.1" min="0" max="90" placeholder="0.0" disabled>
+  <span class="deg">°</span>
+  <button id="fire">START</button>
+  <div class="hint">
+    angle = atan(120 / range)<br>
+    tower height 120 m
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- setup
+  const cv  = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  const input = document.getElementById('angle');
+  const btn   = document.getElementById('fire');
+
+  const W = 900, H = 520;
+  const GROUND_Y  = 430;
+  const ORIGIN_X  = 70;
+  const PPM       = 0.8;              // pixels per metre (horizontal)
+  const TOWER_H   = 120;              // metres
+  const TOWER_TOP_Y = GROUND_Y - TOWER_H * PPM;   // 334
+  const MUZZLE_Y  = TOWER_TOP_Y;
+  const ROUND_TIME = 15;
+
+  const wx = m => ORIGIN_X + m * PPM;
+  const angleFor = d => Math.atan(TOWER_H / d) * 180 / Math.PI;
+
+  // ---------------------------------------------------------------- state
+  const G = {
+    phase: 'menu',      // menu | aim | fly | impact | over | win
+    t: 0,               // phase timer
+    clock: 0,
+    pos: 0,             // 0..4 position index
+    dists: [],
+    enemyDist: 0,
+    enemyVisible: false,
+    timer: ROUND_TIME,
+    score: 0,
+    hits: 0,
+    shot: null,
+    msg: '', sub: '', color: '#fff'
+  };
+
+  const BANDS = [
+    [860, 980],
+    [650, 840],
+    [440, 630],
+    [230, 420],
+    [70, 215]
+  ];
+
+  function makeDists() {
+    return BANDS.map(([a, b]) => a + Math.random() * (b - a));
+  }
+
+  // ---------------------------------------------------------------- UI
+  function syncUI() {
+    const p = G.phase;
+    if (p === 'menu')            { btn.textContent = 'START';       input.disabled = true;  }
+    else if (p === 'aim')        { btn.textContent = 'FIRE';        input.disabled = false; }
+    else if (p === 'over' || p === 'win') { btn.textContent = 'PLAY AGAIN'; input.disabled = true; }
+    else                         { btn.textContent = '···';         input.disabled = true;  }
+  }
+
+  // ---------------------------------------------------------------- flow
+  function startGame() {
+    G.dists  = makeDists();
+    G.score  = 0;
+    G.hits   = 0;
+    G.shot   = null;
+    spawnWave(0);
+  }
+
+  function spawnWave(i) {
+    G.pos          = i;
+    G.enemyDist    = G.dists[i];
+    G.enemyVisible = true;
+    G.timer        = ROUND_TIME;
+    G.shot         = null;
+    G.msg = ''; G.sub = '';
+    G.phase = 'aim';
+    G.t = 0;
+    input.value = '';
+    syncUI();
+    setTimeout(() => { if (G.phase === 'aim') input.focus(); }, 30);
+  }
+
+  function fire() {
+    if (G.phase !== 'aim') return;
+
+    const raw = parseFloat(input.value);
+    if (!isFinite(raw)) {
+      input.classList.add('err');
+      setTimeout(() => input.classList.remove('err'), 400);
+      return;
+    }
+
+    const ang = Math.max(0, Math.min(90, raw));
+    const rad = ang * Math.PI / 180;
+
+    let impact;
+    if (ang >= 89.5) impact = 0;
+    else impact = TOWER_H / Math.tan(rad);
+    if (!isFinite(impact)) impact = 99999;
+
+    const tol = 15 + G.enemyDist * 0.05;
+    const hit = Math.abs(impact - G.enemyDist) <= tol;
+
+    G.shot = { angle: ang, impact, hit, tol, timeout: false };
+    G.phase = 'fly';
+    G.t = 0;
+    G.enemyVisible = true;
+    syncUI();
+  }
+
+  function doTimeout() {
+    G.shot = { angle: null, impact: null, hit: false, tol: 0, timeout: true };
+    G.phase = 'impact';
+    G.t = 0;
+    resolveShot();
+    syncUI();
+  }
+
+  function resolveShot() {
+    const s = G.shot;
+    if (s.hit) {
+      const pts = 100 + Math.round(G.enemyDist / 10);
+      G.score += pts;
+      G.hits++;
+      G.enemyVisible = false;
+      G.msg   = 'TARGET DOWN';
+      G.sub   = '+' + pts + '   (range ' + Math.round(G.enemyDist) + ' m)';
+      G.color = '#57e08a';
+    } else {
+      G.msg = s.timeout ? 'TIME OUT' : 'MISS';
+      G.sub = s.timeout
+        ? 'enemy advancing — range was ' + Math.round(G.enemyDist) + ' m'
+        : 'impact at ' + Math.round(s.impact) + ' m — target at ' + Math.round(G.enemyDist) + ' m';
+      G.color = '#ff6b6b';
+    }
+  }
+
+  function advance() {
+    const hit  = G.shot && G.shot.hit;
+    const step = hit ? 1 : 2;      // a miss lets him sprint closer
+    G.pos += step;
+
+    if (G.pos >= 5) {
+      G.phase = hit ? 'win' : 'over';
+      G.t = 0;
+      syncUI();
+      return;
+    }
+    spawnWave(G.pos);
+  }
+
+  // ---------------------------------------------------------------- loop
+  let last = 0;
+  function loop(ts) {
+    if (!last) last = ts;
+    let dt = (ts - last) / 1000;
+    last = ts;
+    if (dt > 0.05) dt = 0.05;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt) {
+    G.clock += dt;
+
+    if (G.phase === 'aim') {
+      G.timer -= dt;
+      if (G.timer <= 0) { G.timer = 0; doTimeout(); }
+    } else if (G.phase === 'fly') {
+      G.t += dt;
+      if (G.t >= 0.28) { G.phase = 'impact'; G.t = 0; resolveShot(); }
+    } else if (G.phase === 'impact') {
+      G.t += dt;
+      if (G.t >= 1.5) advance();
+    }
+  }
+
+  // ---------------------------------------------------------------- draw
+  function render() {
+    drawSky();
+    drawGround();
+    drawTicks();
+    drawMarkers();
+    drawTower();
+
+    if (G.phase !== 'menu' && G.enemyVisible) drawEnemy();
+
+    if (G.shot) drawShot();
+
+    drawHUD();
+    if (G.phase !== 'menu') drawRangeCard();
+
+    if (G.phase === 'menu') drawMenu();
+    if (G.phase === 'over') drawEnd(false);
+    if (G.phase === 'win')  drawEnd(true);
+  }
+
+  // --- background ---------------------------------------------------
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    g.addColorStop(0.00, '#0a1420');
+    g.addColorStop(0.45, '#1b3purple'.replace('purple','a4e'));
+    g.addColorStop(0.78, '#4d6577');
+    g.addColorStop(1.00, '#c08a5c');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    // hazy sun glow
+    const s = ctx.createRadialGradient(720, GROUND_Y - 20, 0, 720, GROUND_Y - 20, 260);
+    s.addColorStop(0, 'rgba(255,190,120,0.30)');
+    s.addColorStop(1, 'rgba(255,190,120,0)');
+    ctx.fillStyle = s;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+  }
+
+  function drawGround() {
+    const g = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+    g.addColorStop(0, '#3c4030');
+    g.addColorStop(1, '#14180f');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    ctx.fillStyle = 'rgba(255,180,120,0.30)';
+    ctx.fillRect(0, GROUND_Y, W, 2);
+
+    // faint texture
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const y = GROUND_Y + 18 + i * 16;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+  }
+
+  function drawTicks() {
+    ctx.textAlign = 'center';
+    for (let m = 100; m <= 1000; m += 100) {
+      const x = wx(m);
+      ctx.strokeStyle = 'rgba(200,230,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y + 2);
+      ctx.lineTo(x, GROUND_Y + 12);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(180,215,240,0.35)';
+      ctx.font = '10px "Courier New", monospace';
+      ctx.fillText(m, x, GROUND_Y + 26);
+    }
+  }
+
+  function drawMarkers() {
+    const keys = [500, 600, 700];
+    keys.forEach(m => {
+      const x = wx(m);
+
+      // vertical guide
+      ctx.save();
+      ctx.setLineDash([3, 7]);
+      ctx.strokeStyle = 'rgba(216,180,90,0.30)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y - 34);
+      ctx.lineTo(x, 90);
+      ctx.stroke();
+      ctx.restore();
+
+      // post
+      ctx.strokeStyle = '#d8b45a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x, GROUND_Y - 34);
+      ctx.stroke();
+
+      // sign
+      ctx.fillStyle = 'rgba(216,180,90,0.92)';
+      ctx.fillRect(x - 25, GROUND_Y - 54, 50, 20);
+      ctx.fillStyle = '#1a1508';
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(m + 'm', x, GROUND_Y - 40);
+    });
+  }
+
+  function drawTower() {
+    const bx = ORIGIN_X;
+    const topY = TOWER_TOP_Y;
+    const baseHalf = 15, topHalf = 8;
+
+    // legs
+    ctx.strokeStyle = '#3d4a56';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(bx - baseHalf, GROUND_Y);
+    ctx.lineTo(bx - topHalf, topY);
+    ctx.moveTo(bx + baseHalf, GROUND_Y);
+    ctx.lineTo(bx + topHalf, topY);
+    ctx.stroke();
+
+    // braces
+    ctx.strokeStyle = '#2b3742';
+    ctx.lineWidth = 1.1;
+    const segs = 8;
+    for (let i = 0; i < segs; i++) {
+      const t0 = i / segs, t1 = (i + 1) / segs;
+      const h0 = baseHalf + (topHalf - baseHalf) * t0;
+      const h1 = baseHalf + (topHalf - baseHalf) * t1;
+      const y0 = GROUND_Y + (topY - GROUND_Y) * t0;
+      const y1 = GROUND_Y + (topY - GROUND_Y) * t1;
+
+      ctx.beginPath();
+      ctx.moveTo(bx - h0, y0); ctx.lineTo(bx + h1, y1);
+      ctx.moveTo(bx + h0, y0); ctx.lineTo(bx - h1, y1);
+      ctx.moveTo(bx - h1, y1); ctx.lineTo(bx + h1, y1);
+      ctx.stroke();
+    }
+
+    // platform
+    ctx.fillStyle = '#4b5866';
+    ctx.fillRect(bx - 16, topY - 7, 32, 7);
+    ctx.strokeStyle = '#66788a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 16, topY - 7, 32, 7);
+
+    // railing
+    ctx.strokeStyle = '#5a6b7a';
+    ctx.beginPath();
+    ctx.moveTo(bx - 14, topY - 7); ctx.lineTo(bx - 14, topY - 18);
+    ctx.moveTo(bx + 14, topY - 7); ctx.lineTo(bx + 14, topY - 18);
+    ctx.moveTo(bx - 14, topY - 18); ctx.lineTo(bx + 14, topY - 18);
+    ctx.stroke();
+
+    // sniper silhouette
+    ctx.fillStyle = '#161d25';
+    ctx.beginPath();
+    ctx.ellipse(bx - 2, topY - 10, 11, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bx + 9, topY - 12, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#0d1319';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + 6, topY - 11);
+    ctx.lineTo(bx + 24, topY - 9);
+    ctx.stroke();
+
+    // angle gauge
+    const gx = bx, gy = topY;
+    ctx.save();
+    ctx.setLineDash([3, 5]);
+    ctx.strokeStyle = 'rgba(140,220,255,0.22)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 52, 0, Math.PI / 2);
+    ctx.stroke();
+    ctx.restore();
+
+    for (let a = 0; a <= 90; a += 15) {
+      const r = a * Math.PI / 180;
+      const c = Math.cos(r), s = Math.sin(r);
+      ctx.strokeStyle = a === 0 ? 'rgba(140,220,255,0.55)' : 'rgba(140,220,255,0.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(gx + c * 47, gy + s * 47);
+      ctx.lineTo(gx + c * 56, gy + s * 56);
+      ctx.stroke();
+    }
+  }
+
+  function drawEnemy() {
+    const x = wx(G.enemyDist);
+    const y = GROUND_Y;
+    const pulse = 0.5 + 0.5 * Math.sin(G.clock * 7);
+
+    // ground glow
+    ctx.beginPath();
+    ctx.ellipse(x, y, 17 + pulse * 6, 6 + pulse * 2.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,60,60,0.16)';
+    ctx.fill();
+
+    // silhouette
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = '#ff3b3b';
+    ctx.fillRect(-5.5, -9, 4, 9);
+    ctx.fillRect(1.5, -9, 4, 9);
+    ctx.fillRect(-5.5, -20, 11, 12);
+    ctx.beginPath();
+    ctx.arc(0, -24, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(-8, -19, 3, 8);
+    ctx.fillRect(5, -19, 3, 8);
+    ctx.restore();
+
+    // chevron
+    ctx.beginPath();
+    ctx.moveTo(x - 7, y - 42);
+    ctx.lineTo(x + 7, y - 42);
+    ctx.lineTo(x, y - 33);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,70,70,' + (0.55 + pulse * 0.45) + ')';
+    ctx.fill();
+  }
+
+  function drawShot() {
+    const s = G.shot;
+    if (s.angle == null) return;   // timeout, no tracer
+
+    const rad = s.angle * Math.PI / 180;
+    const tx = ORIGIN_X, ty = MUZZLE_Y;
+    const dx = Math.cos(rad), dy = Math.sin(rad);
+
+    let len = 6000;
+    if (dy > 1e-6) len = Math.min(len, (GROUND_Y - ty) / dy);
+    if (dx > 1e-6) len = Math.min(len, (W + 80 - tx) / dx);
+
+    const ex = tx + dx * len;
+    const ey = ty + dy * len;
+
+    let p = 1;
+    if (G.phase === 'fly') p = Math.min(1, G.t / 0.28);
+
+    const bx = tx + (ex - tx) * p;
+    const by = ty + (ey - ty) * p;
+
+    // tracer trail
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = 'rgba(255,232,150,0.9)';
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = '#ffd24a';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.restore();
+
+    if (G.phase === 'fly') {
+      ctx.beginPath();
+      ctx.arc(bx, by, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff6c4';
+      ctx.fill();
+    }
+
+    // impact
+    if (G.phase === 'impact') {
+      const ip = Math.min(1, G.t / 0.6);
+
+      if (s.hit) {
+        const hx = wx(G.enemyDist);
+        const hy = GROUND_Y - 14;
+        for (let i = 0; i < 3; i++) {
+          const r = 8 + ip * (34 + i * 16);
+          ctx.beginPath();
+          ctx.arc(hx, hy, r, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255,' + (90 + i * 40) + ',60,' + (1 - ip) * 0.9 + ')';
+          ctx.lineWidth = 3 - i * 0.7;
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(hx, hy, 7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,240,180,' + (1 - ip) + ')';
+        ctx.fill();
+      } else if (ey >= GROUND_Y - 1) {
+        // dust puff where the bullet strikes the ground
+        ctx.beginPath();
+        ctx.arc(ex, GROUND_Y, 5 + ip * 24, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(220,190,130,' + (1 - ip) * 0.9 + ')';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255,90,90,' + (1 - ip) * 0.9 + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(ex - 7, GROUND_Y - 7);
+        ctx.lineTo(ex + 7, GROUND_Y + 7);
+        ctx.moveTo(ex + 7, GROUND_Y - 7);
+        ctx.lineTo(ex - 7, GROUND_Y + 7);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,140,140,' + (1 - ip) * 0.8 + ')';
+        ctx.font = 'bold 11px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.round(s.impact) + 'm', ex, GROUND_Y + 42);
+      }
+    }
+  }
+
+  function drawHUD() {
+    ctx.fillStyle = 'rgba(6,12,18,0.78)';
+    ctx.fillRect(0, 0, W, 46);
+    ctx.fillStyle = 'rgba(120,200,255,0.18)';
+    ctx.fillRect(0, 45, W, 1);
+
+    ctx.font = 'bold 17px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillText('SCORE ' + G.score, 16, 30);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#cfe3f5';
+    if (G.phase === 'menu') ctx.fillText('SNIPER TOWER', W / 2, 30);
+    else ctx.fillText('CONTACT ' + Math.min(G.pos + 1, 5) + ' / 5', W / 2, 30);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#9be8c0';
+    ctx.fillText('KILLS ' + G.hits, W - 16, 30);
+
+    // timer bar
+    if (G.phase === 'aim') {
+      const p = G.timer / ROUND_TIME;
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(0, 46, W, 6);
+      ctx.fillStyle = p > 0.5 ? '#57e08a' : p > 0.25 ? '#f5c542' : '#ff5555';
+      ctx.fillRect(0, 46, W * p, 6);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(G.timer.toFixed(1) + 's', W - 16, 70);
+    }
+
+    // result banner
+    if (G.phase === 'impact') {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 44px "Courier New", monospace';
+      ctx.fillStyle = G.color;
+      ctx.shadowColor = G.color;
+      ctx.shadowBlur = 22;
+      ctx.fillText(G.msg, W / 2, 175);
+      ctx.shadowBlur = 0;
+
+      ctx.font = '14px "Courier New", monospace';
+      ctx.fillStyle = 'rgba(220,235,250,0.75)';
+      ctx.fillText(G.sub, W / 2, 205);
+    }
+  }
+
+  function drawRangeCard() {
+    const x = 14, y = 56, w = 168, h = 244;
+    ctx.fillStyle = 'rgba(8,16,24,0.74)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(120,200,255,0.22)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillText('DOPE CARD', x + 12, y + 20);
+
+    ctx.font = '10px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(160,200,230,0.45)';
+    ctx.fillText('RANGE', x + 12, y + 38);
+    ctx.fillText('ANGLE', x + 88, y + 38);
+
+    let yy = y + 58;
+    for (let m = 1000; m >= 100; m -= 100) {
+      ctx.font = '12px "Courier New", monospace';
+      ctx.fillStyle = 'rgba(207,227,245,0.9)';
+      ctx.fillText(m + ' m', x + 12, yy);
+
+      ctx.fillStyle = '#9be8c0';
+      ctx.fillText(angleFor(m).toFixed(1) + '\u00B0', x + 88, yy);
+      yy += 18;
+    }
+  }
+
+  function drawMenu() {
+    ctx.fillStyle = 'rgba(4,9,14,0.78)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+
+    ctx.font = 'bold 52px "Courier New", monospace';
+    ctx.fillStyle = '#7fd4ff';
+    ctx.shadowColor = '#2f9fd0';
+    ctx.shadowBlur = 26;
+    ctx.fillText('SNIPER TOWER', W / 2, 160);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '15px "Courier New", monospace';
+    ctx.fillStyle = '#9be8c0';
+    ctx.fillText('Enemies approach in 5 waves — each one closer.', W / 2, 220);
+
+    ctx.fillStyle = 'rgba(207,227,245,0.85)';
+    ctx.font = '14px "Courier New", monospace';
+    ctx.fillText('You are on a 120 m tower. Enter the barrel angle', W / 2, 268);
+    ctx.fillText('(degrees BELOW horizontal) to drop a round on the target.', W / 2, 290);
+
+    ctx.fillStyle = 'rgba(255,220,140,0.9)';
+    ctx.fillText('15 seconds per contact. Miss twice and he sprints closer.', W / 2, 330);
+    ctx.fillStyle = 'rgba(255,120,120,0.9)';
+    ctx.fillText('If he reaches the tower — you die.', W / 2, 354);
+
+    ctx.fillStyle = 'rgba(160,200,230,0.6)';
+    ctx.font = '13px "Courier New", monospace';
+    ctx.fillText('Use the range markers and the dope card on the left.', W / 2, 400);
+
+    ctx.fillStyle = '#7fd4ff';
+    ctx.font = 'bold 18px "Courier New", monospace';
+    ctx.fillText('PRESS  START', W / 2, 452);
+  }
+
+  function drawEnd(won) {
+    ctx.fillStyle = won ? 'rgba(4,20,12,0.82)' : 'rgba(24,4,4,0.82)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 54px "Courier New", monospace';
+    ctx.fillStyle = won ? '#57e08a' : '#ff5555';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 28;
+    ctx.fillText(won ? 'SECTOR SECURED' : 'YOU ARE DEAD', W / 2, 200);
+    ctx.shadowBlur = 0;
+
+    ctx.font = '16px "Courier New", monospace';
+    ctx.fillStyle = 'rgba(220,235,250,0.85)';
+    ctx.fillText(won
+      ? 'All five contacts eliminated before they reached the base.'
+      : 'The enemy reached the tower and overran your position.', W / 2, 250);
+
+    ctx.font = 'bold 26px "Courier New", monospace';
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillText('FINAL SCORE  ' + G.score, W / 2, 320);
+
+    ctx.font = '16px "Courier New", monospace';
+    ctx.fillStyle = '#9be8c0';
+    ctx.fillText('TARGETS DOWN  ' + G.hits + ' / 5', W / 2, 356);
+
+    ctx.fillStyle = 'rgba(160,200,230,0.6)';
+    ctx.font = '14px "Courier New", monospace';
+    ctx.fillText('Press  PLAY AGAIN  to re-deploy', W / 2, 420);
+  }
+
+  // ---------------------------------------------------------------- input
+  btn.addEventListener('click', () => {
+    if (G.phase === 'menu' || G.phase === 'over' || G.phase === 'win') startGame();
+    else if (G.phase === 'aim') fire();
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); fire(); }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (G.phase === 'aim' && document.activeElement !== input) {
+      if (/^[0-9.]$/.test(e.key)) input.focus();
+    }
+    if (e.key === 'Enter' && (G.phase === 'menu' || G.phase === 'over' || G.phase === 'win')) {
+      startGame();
+    }
+  });
+
+  // ---------------------------------------------------------------- go
+  syncUI();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
